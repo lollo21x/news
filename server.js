@@ -20,14 +20,18 @@ const MIME_TYPES = {
 function fetchUrl(targetUrl) {
     return new Promise((resolve, reject) => {
         const getter = targetUrl.startsWith('https') ? https : http;
-        getter.get(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+        getter.get(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        }, (res) => {
             // Follow redirects
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 return fetchUrl(res.headers.location).then(resolve).catch(reject);
             }
             let data = '';
             res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve(data));
+            res.on('end', () => resolve({ data, statusCode: res.statusCode }));
             res.on('error', reject);
         }).on('error', reject);
     });
@@ -47,13 +51,24 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
-            const xmlData = await fetchUrl(feedUrl);
+            const result = await fetchUrl(feedUrl);
+
+            if (result.statusCode !== 200) {
+                console.warn(`RSS target responded with ${result.statusCode} for ${feedUrl}`);
+                res.writeHead(result.statusCode, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: `RSS fetch failed with status ${result.statusCode}`,
+                    status: result.statusCode
+                }));
+                return;
+            }
+
             res.writeHead(200, {
                 'Content-Type': 'application/xml; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
                 'Cache-Control': 'no-cache'
             });
-            res.end(xmlData);
+            res.end(result.data);
         } catch (err) {
             console.error('RSS fetch error:', err.message);
             res.writeHead(502, { 'Content-Type': 'application/json' });
