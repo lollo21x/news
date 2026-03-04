@@ -1,0 +1,636 @@
+/* ============================
+   DESIGN SYSTEM — News Site
+   Font: Montserrat (from old files)
+   Color: #DA352F (red theme)
+   Rounding, blur, transitions from old files
+   NO SHADOWS
+   ============================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+
+:root {
+    --theme-color: #DA352F;
+    --theme-color-dark: #b82925;
+    --theme-color-light: rgba(218, 53, 47, 0.1);
+    --bg-primary: #f8f9fa;
+    --bg-card: rgba(255, 255, 255, 0.8);
+    --bg-card-solid: #ffffff;
+    --text-primary: #1a1a1a;
+    --text-secondary: #666;
+    --text-tertiary: #999;
+    --border-color: rgba(0, 0, 0, 0.06);
+    --radius-lg: 20px;
+    --radius-md: 15px;
+    --radius-sm: 12px;
+    --radius-pill: 50px;
+    --transition-smooth: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+::selection {
+    background-color: var(--theme-color);
+    color: #fff;
+}
+
+body {
+    font-family: 'Montserrat', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================
+   APP WRAPPER
+   ============================ */
+.app-wrapper {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px 20px 160px;
+}
+
+/* ============================
+   HEADER
+   ============================ */
+.site-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0 25px;
+}
+
+.header-left h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.header-left h1 i {
+    color: var(--theme-color);
+    font-size: 1.4rem;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.last-update {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.last-update.syncing {
+    color: var(--theme-color);
+}
+
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background-color: var(--theme-color);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: var(--radius-pill);
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.live-badge:hover {
+    transform: scale(1.05);
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+    background-color: white;
+    border-radius: 50%;
+    animation: pulse-live 1.5s infinite;
+}
+
+@keyframes pulse-live {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
+/* ============================
+   NEWS CONTAINER
+   ============================ */
+.news-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ============================
+   NEWS CARD
+   ============================ */
+.news-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    border: 1px solid var(--border-color);
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    animation: fadeInCard 0.5s ease forwards;
+    opacity: 0;
+}
+
+.news-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(218, 53, 47, 0.15);
+}
+
+.news-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.news-source {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--theme-color);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.news-time {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-tertiary);
+}
+
+.news-title {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+.news-card-footer {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.news-card-footer i {
+    font-size: 0.7rem;
+    color: var(--theme-color);
+}
+
+/* Card fade-in animation */
+@keyframes fadeInCard {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stagger animation for initial load */
+.news-card:nth-child(1) {
+    animation-delay: 0.0s;
+}
+
+.news-card:nth-child(2) {
+    animation-delay: 0.04s;
+}
+
+.news-card:nth-child(3) {
+    animation-delay: 0.08s;
+}
+
+.news-card:nth-child(4) {
+    animation-delay: 0.12s;
+}
+
+.news-card:nth-child(5) {
+    animation-delay: 0.16s;
+}
+
+.news-card:nth-child(6) {
+    animation-delay: 0.20s;
+}
+
+.news-card:nth-child(7) {
+    animation-delay: 0.24s;
+}
+
+.news-card:nth-child(8) {
+    animation-delay: 0.28s;
+}
+
+.news-card:nth-child(9) {
+    animation-delay: 0.32s;
+}
+
+.news-card:nth-child(10) {
+    animation-delay: 0.36s;
+}
+
+.news-card:nth-child(n+11) {
+    animation-delay: 0.4s;
+}
+
+/* New items added by refresh */
+.news-card.new-item {
+    animation: fadeInNew 0.6s ease forwards;
+}
+
+@keyframes fadeInNew {
+    from {
+        opacity: 0;
+        transform: translateY(-15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================
+   LOAD MORE BUTTON
+   Fully circular pill, no dark hover
+   ============================ */
+.load-more-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 800px;
+    margin: 20px auto 0;
+    padding: 14px;
+    border: none;
+    border-radius: 9999px;
+    background-color: var(--theme-color);
+    color: white;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.load-more-btn:hover {
+    transform: scale(1.015);
+}
+
+/* ============================
+   BOTTOM BLUR GRADIENT
+   Creates contrast with white buttons
+   ============================ */
+.bottom-gradient {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 120px;
+    background: linear-gradient(to top,
+            #f8f9fa 0%,
+            #f8f9fa 30%,
+            rgba(248, 249, 250, 0) 100%);
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* ============================
+   FIXED BOTTOM — ICON BUTTONS
+   (old files style: 50px circles)
+   ============================ */
+.icon-button {
+    position: fixed;
+    bottom: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: white;
+    background-color: var(--theme-color);
+    transition: transform 0.2s ease;
+    z-index: 10;
+}
+
+.icon-button:hover {
+    transform: scale(1.05);
+}
+
+.icon-button i {
+    font-size: 1.3rem;
+}
+
+#backIcon {
+    left: 20px;
+}
+
+#searchIcon {
+    right: 20px;
+}
+
+/* ============================
+   BOTTOM TABS — Category Buttons
+   Fixed at bottom, aligned with icon buttons
+   ============================ */
+.bottom-tabs {
+    position: fixed;
+    bottom: 20px;
+    /* Aligns with icon buttons (bottom: 20px) */
+    left: 80px;
+    right: 80px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: flex-end;
+    /* Align rows to the bottom */
+    gap: 8px;
+    z-index: 10;
+    padding: 0;
+}
+
+.tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background-color: var(--bg-card-solid);
+    color: var(--text-secondary);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--transition-smooth);
+    margin: 0;
+}
+
+.tab-btn:hover {
+    transform: scale(1.04);
+}
+
+.tab-btn.active {
+    background-color: var(--theme-color);
+    color: white;
+}
+
+.tab-btn i {
+    font-size: 0.85rem;
+}
+
+/* ============================
+   SEARCH MODAL (old files style)
+   Smooth open/close animation
+   ============================ */
+.overlay {
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.search-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    background-color: white;
+    border-radius: var(--radius-lg);
+    z-index: 1001;
+    max-width: 500px;
+    width: 90%;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.search-modal.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.search-modal-header h3 {
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.search-input-wrapper {
+    display: flex;
+    align-items: center;
+    background-color: #f9f9f9;
+    border-radius: var(--radius-md);
+    padding: 4px 12px;
+    border: 2px solid #ddd;
+    transition: border-color 0.3s ease;
+}
+
+.search-input-wrapper:focus-within {
+    border-color: var(--theme-color);
+}
+
+.search-icon-input {
+    color: var(--text-tertiary);
+    font-size: 0.95rem;
+    margin-right: 10px;
+}
+
+.search-input-wrapper input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: transparent;
+    padding: 12px 0;
+}
+
+.search-input-wrapper input::placeholder {
+    color: var(--text-tertiary);
+    font-weight: 400;
+}
+
+.search-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modal-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--radius-lg);
+    background-color: var(--theme-color);
+    color: white;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: var(--transition-smooth);
+    margin: 0;
+}
+
+.modal-btn:hover {
+    transform: scale(1.04);
+}
+
+/* ============================
+   LOADING SPINNER
+   ============================ */
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 0;
+    gap: 20px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--theme-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.loading-spinner.hidden {
+    display: none;
+}
+
+/* ============================
+   ERROR / EMPTY STATE
+   ============================ */
+.error-state,
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-tertiary);
+}
+
+.error-state i,
+.empty-state i {
+    font-size: 2.5rem;
+    color: var(--theme-color);
+    margin-bottom: 15px;
+}
+
+.error-state p,
+.empty-state p {
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+/* ============================
+   RESPONSIVE
+   ============================ */
+@media (max-width: 600px) {
+    .app-wrapper {
+        padding: 15px 15px 170px;
+    }
+
+    .site-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 15px 0 20px;
+    }
+
+    .header-left h1 {
+        font-size: 1.35rem;
+    }
+
+    .news-card {
+        padding: 16px;
+    }
+
+    .news-title {
+        font-size: 0.93rem;
+    }
+
+    .tab-btn {
+        padding: 8px 12px;
+        font-size: 0.78rem;
+    }
+
+    .bottom-tabs {
+        left: 75px;
+        right: 75px;
+        gap: 6px;
+    }
+}
