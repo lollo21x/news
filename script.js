@@ -388,16 +388,7 @@ loadMoreBtn.addEventListener('click', () => {
 // ============================
 
 backIcon.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    const topBtn = document.querySelector('.tab-btn[data-category="top"]');
-    if (topBtn) topBtn.classList.add('active');
-
-    currentCategory = 'top';
-    currentSearchQuery = '';
-    allFetchedItems = [];
-    displayedCount = 0;
-    loadFeed('top');
-    resetInterval();
+    window.location.href = 'http://hub4d.lollo.dpdns.org';
 });
 
 // ============================
