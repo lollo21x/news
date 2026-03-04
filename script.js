@@ -45,37 +45,22 @@ const cancelSearch = document.getElementById('cancelSearch');
 // ============================
 
 async function fetchRSS(url) {
-    const proxyUrl = '/api/rss?url=' + encodeURIComponent(url);
+    const proxyUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url);
+
     const response = await fetch(proxyUrl);
     if (!response.ok) throw new Error('HTTP error ' + response.status);
-    const xmlText = await response.text();
 
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlText, 'text/xml');
+    const data = await response.json();
 
-    // Check for parse errors
-    const parseError = xml.querySelector('parsererror');
-    if (parseError) throw new Error('XML parse error');
+    if (data.status !== 'ok') throw new Error('RSS2JSON error');
 
-    const items = xml.querySelectorAll('item');
-
-    const results = [];
-    items.forEach(item => {
-        const title = item.querySelector('title')?.textContent || '';
-        const link = item.querySelector('link')?.textContent || '#';
-        const pubDate = item.querySelector('pubDate')?.textContent || '';
-        const source = item.querySelector('source')?.textContent || extractSource(title);
-
-        results.push({
-            id: link,
-            title: cleanTitle(title),
-            link,
-            source,
-            pubDate
-        });
-    });
-
-    return results;
+    return data.items.map(item => ({
+        id: item.link || item.guid,
+        title: cleanTitle(item.title),
+        link: item.link,
+        source: item.author || extractSource(item.title),
+        pubDate: item.pubDate
+    }));
 }
 
 function cleanTitle(title) {
@@ -157,11 +142,14 @@ async function loadFeed(category, isRefresh = false) {
         hideLoading();
     } catch (error) {
         console.error('Error loading feed:', error);
-        // On failure, revert to last known time
         revertTimestamp();
         hideLoading();
         if (!isRefresh) {
-            showError();
+            if (error.message.includes('429')) {
+                showError('Troppe richieste a Google News. Riprova tra qualche minuto.');
+            } else {
+                showError();
+            }
         }
     }
 }
