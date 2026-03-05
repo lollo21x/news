@@ -45,22 +45,40 @@ const cancelSearch = document.getElementById('cancelSearch');
 // ============================
 
 async function fetchRSS(url) {
-    const proxyUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url);
+    // Usiamo allOrigins come proxy CORS gratuito
+    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
 
     const response = await fetch(proxyUrl);
     if (!response.ok) throw new Error('HTTP error ' + response.status);
 
     const data = await response.json();
+    const xmlText = data.contents;
 
-    if (data.status !== 'ok') throw new Error('RSS2JSON error');
+    if (!xmlText) throw new Error('Nessun contenuto restituito dal proxy');
 
-    return data.items.map(item => ({
-        id: item.link || item.guid,
-        title: cleanTitle(item.title),
-        link: item.link,
-        source: item.author || extractSource(item.title),
-        pubDate: item.pubDate
-    }));
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'text/xml');
+
+    // Controllo errori di parsing
+    const parseError = xml.querySelector('parsererror');
+    if (parseError) throw new Error('Impossibile fare il parse del file XML');
+
+    const items = Array.from(xml.querySelectorAll('item'));
+
+    return items.map(item => {
+        const title = item.querySelector('title')?.textContent || '';
+        const link = item.querySelector('link')?.textContent || '#';
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+        const source = item.querySelector('source')?.textContent || extractSource(title);
+
+        return {
+            id: link,
+            title: cleanTitle(title),
+            link,
+            source,
+            pubDate
+        };
+    });
 }
 
 function cleanTitle(title) {
