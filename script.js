@@ -16,10 +16,6 @@ const FEEDS = {
 
 const INITIAL_LOAD = 15;
 const LOAD_MORE_COUNT = 10;
-const FETCH_TIMEOUT_MS = 8000;
-
-// rss2json API key is optional for low volume, leave empty or add your own
-const RSS2JSON_KEY = '';
 
 // State
 let currentCategory = 'top';
@@ -28,7 +24,7 @@ let allFetchedItems = [];
 let displayedCount = 0;
 let refreshInterval = null;
 let lastSuccessTime = null;
-let currentAbortController = null; // Track ongoing requests
+let currentAbortController = null;
 
 // DOM
 const newsContainer = document.getElementById('newsContainer');
@@ -46,146 +42,29 @@ const searchGoBtn = document.getElementById('searchGoBtn');
 const cancelSearch = document.getElementById('cancelSearch');
 
 // ============================
-// RSS FETCHING & PARSING
+// RSS FETCHING
 // ============================
 
-/**
- * Fetch with a timeout — aborts if it takes longer than FETCH_TIMEOUT_MS
- */
-async function fetchWithTimeout(url, signal) {
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+async function fetchRSS(rssUrl, signal) {
+    // Call our own Netlify function — same domain, no CORS, no rate limits
+    const apiUrl = '/.netlify/functions/rss?url=' + encodeURIComponent(rssUrl);
 
-    // Combine external signal (category change) with timeout signal
-    const combinedSignal = signal
-        ? anySignal([signal, timeoutController.signal])
-        : timeoutController.signal;
-
-    try {
-        const response = await fetch(url, { signal: combinedSignal });
-        clearTimeout(timeoutId);
-        return response;
-    } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
+    const response = await fetch(apiUrl, { signal });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'HTTP error ' + response.status);
     }
-}
-
-/**
- * Combines multiple AbortSignals — aborts as soon as any one fires
- */
-function anySignal(signals) {
-    const controller = new AbortController();
-    for (const signal of signals) {
-        if (signal.aborted) { controller.abort(); break; }
-        signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-    return controller.signal;
-}
-
-/**
- * Strategy 1: rss2json.com — fast, designed for RSS, returns JSON directly
- */
-async function fetchViaRss2Json(rssUrl, signal) {
-    let apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=50`;
-    if (RSS2JSON_KEY) apiUrl += `&api_key=${RSS2JSON_KEY}`;
-
-    const response = await fetchWithTimeout(apiUrl, signal);
-    if (!response.ok) throw new Error('rss2json HTTP error ' + response.status);
 
     const data = await response.json();
-    if (data.status !== 'ok') throw new Error('rss2json error: ' + (data.message || 'unknown'));
+    const rawItems = data.items || [];
 
-    return (data.items || []).map(item => ({
-        id: item.link || item.guid,
+    return rawItems.map(item => ({
+        id: item.link,
         title: cleanTitle(item.title || ''),
         link: item.link || '#',
-        source: data.feed?.title || extractSourceFromTitle(item.title || ''),
+        source: item.source || extractSourceFromTitle(item.title || ''),
         pubDate: item.pubDate || ''
     }));
-}
-
-/**
- * Strategy 2: allorigins.win — fallback, parses raw XML
- */
-async function fetchViaAllOrigins(rssUrl, signal) {
-    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(rssUrl);
-    const response = await fetchWithTimeout(proxyUrl, signal);
-    if (!response.ok) throw new Error('allorigins HTTP error ' + response.status);
-
-    const data = await response.json();
-    const xmlText = data.contents;
-    if (!xmlText) throw new Error('Nessun contenuto restituito dal proxy');
-
-    return parseXML(xmlText);
-}
-
-/**
- * Strategy 3: corsproxy.io — second fallback
- */
-async function fetchViaCorsProxy(rssUrl, signal) {
-    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(rssUrl);
-    const response = await fetchWithTimeout(proxyUrl, signal);
-    if (!response.ok) throw new Error('corsproxy HTTP error ' + response.status);
-
-    const xmlText = await response.text();
-    return parseXML(xmlText);
-}
-
-/**
- * Parse raw RSS XML into item objects
- */
-function parseXML(xmlText) {
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlText, 'text/xml');
-
-    const parseError = xml.querySelector('parsererror');
-    if (parseError) throw new Error('Impossibile fare il parse del file XML');
-
-    const items = Array.from(xml.querySelectorAll('item'));
-
-    return items.map(item => {
-        const title = item.querySelector('title')?.textContent || '';
-        const link = item.querySelector('link')?.textContent || '#';
-        const pubDate = item.querySelector('pubDate')?.textContent || '';
-        const source = item.querySelector('source')?.textContent || extractSourceFromTitle(title);
-
-        return {
-            id: link,
-            title: cleanTitle(title),
-            link,
-            source,
-            pubDate
-        };
-    });
-}
-
-/**
- * Fetch a single RSS feed, trying proxies in order until one works
- */
-async function fetchRSS(rssUrl, signal) {
-    const strategies = [
-        () => fetchViaRss2Json(rssUrl, signal),
-        () => fetchViaAllOrigins(rssUrl, signal),
-        () => fetchViaCorsProxy(rssUrl, signal),
-    ];
-
-    let lastError;
-    for (const strategy of strategies) {
-        // Don't try next strategy if request was intentionally aborted
-        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
-
-        try {
-            const items = await strategy();
-            return items;
-        } catch (err) {
-            if (err.name === 'AbortError') throw err; // Propagate cancellation immediately
-            console.warn('Strategy failed, trying next:', err.message);
-            lastError = err;
-        }
-    }
-
-    throw lastError || new Error('All fetch strategies failed');
 }
 
 function cleanTitle(title) {
@@ -198,9 +77,7 @@ function cleanTitle(title) {
 
 function extractSourceFromTitle(title) {
     const dashIndex = title.lastIndexOf(' - ');
-    if (dashIndex > 0) {
-        return title.substring(dashIndex + 3).trim();
-    }
+    if (dashIndex > 0) return title.substring(dashIndex + 3).trim();
     return 'Google News';
 }
 
@@ -209,10 +86,8 @@ function extractSourceFromTitle(title) {
 // ============================
 
 async function loadFeed(category, isRefresh = false) {
-    // Cancel any in-flight request from a previous category/search
-    if (currentAbortController) {
-        currentAbortController.abort();
-    }
+    // Cancel any ongoing requests
+    if (currentAbortController) currentAbortController.abort();
     currentAbortController = new AbortController();
     const signal = currentAbortController.signal;
 
@@ -226,24 +101,23 @@ async function loadFeed(category, isRefresh = false) {
     try {
         let urls;
         if (category === 'search') {
-            const query = currentSearchQuery;
-            if (!query) {
+            if (!currentSearchQuery) {
                 hideLoading();
                 showEmpty('Inserisci una parola chiave per cercare.');
                 return;
             }
-            urls = [`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=it&gl=IT&ceid=IT:it`];
+            urls = [`https://news.google.com/rss/search?q=${encodeURIComponent(currentSearchQuery)}&hl=it&gl=IT&ceid=IT:it`];
         } else {
             urls = FEEDS[category];
         }
 
-        const allPromises = urls.map(url => fetchRSS(url, signal));
-        const allResults = await Promise.all(allPromises);
+        const allResults = await Promise.all(urls.map(url => fetchRSS(url, signal)));
 
-        // If category changed while fetching, bail out silently
         if (signal.aborted) return;
 
         let newItems = allResults.flat();
+
+        // Deduplicate
         const seen = new Set();
         newItems = newItems.filter(item => {
             if (seen.has(item.id)) return false;
@@ -256,7 +130,6 @@ async function loadFeed(category, isRefresh = false) {
         if (isRefresh) {
             const currentIds = new Set(allFetchedItems.map(i => i.id));
             const brandNew = newItems.filter(item => !currentIds.has(item.id));
-
             if (brandNew.length > 0) {
                 brandNew.reverse().forEach(item => {
                     allFetchedItems.unshift(item);
@@ -273,18 +146,11 @@ async function loadFeed(category, isRefresh = false) {
         updateTimestamp();
         hideLoading();
     } catch (error) {
-        if (error.name === 'AbortError') return; // Silently ignore cancelled requests
-
+        if (error.name === 'AbortError') return;
         console.error('Error loading feed:', error);
         revertTimestamp();
         hideLoading();
-        if (!isRefresh) {
-            if (error.message.includes('429')) {
-                showError('Troppe richieste a Google News. Riprova tra qualche minuto.');
-            } else {
-                showError();
-            }
-        }
+        if (!isRefresh) showError(error.message);
     }
 }
 
@@ -302,16 +168,10 @@ function renderInitialCards() {
     }
 
     const toShow = allFetchedItems.slice(0, INITIAL_LOAD);
-    toShow.forEach(item => {
-        newsContainer.appendChild(createNewsCard(item, false));
-    });
+    toShow.forEach(item => newsContainer.appendChild(createNewsCard(item, false)));
     displayedCount = toShow.length;
 
-    if (displayedCount < allFetchedItems.length) {
-        loadMoreBtn.style.display = 'flex';
-    } else {
-        loadMoreBtn.style.display = 'none';
-    }
+    loadMoreBtn.style.display = displayedCount < allFetchedItems.length ? 'flex' : 'none';
 }
 
 function loadMore() {
@@ -322,10 +182,7 @@ function loadMore() {
         newsContainer.appendChild(card);
     });
     displayedCount += nextBatch.length;
-
-    if (displayedCount >= allFetchedItems.length) {
-        loadMoreBtn.style.display = 'none';
-    }
+    if (displayedCount >= allFetchedItems.length) loadMoreBtn.style.display = 'none';
 }
 
 function createNewsCard(item, isNew) {
@@ -334,7 +191,6 @@ function createNewsCard(item, isNew) {
     card.href = item.link;
     card.target = '_blank';
     card.rel = 'noopener noreferrer';
-
     card.innerHTML = `
         <div class="news-card-header">
             <span class="news-source">${escapeHTML(item.source)}</span>
@@ -346,7 +202,6 @@ function createNewsCard(item, isNew) {
             <span>Leggi l'articolo completo</span>
         </div>
     `;
-
     return card;
 }
 
@@ -359,13 +214,8 @@ function prependNewsCard(item, isNew) {
 // UI HELPERS
 // ============================
 
-function showLoading() {
-    loadingSpinner.classList.remove('hidden');
-}
-
-function hideLoading() {
-    loadingSpinner.classList.add('hidden');
-}
+function showLoading() { loadingSpinner.classList.remove('hidden'); }
+function hideLoading() { loadingSpinner.classList.add('hidden'); }
 
 function showError(message) {
     newsContainer.innerHTML = `
@@ -418,11 +268,9 @@ function formatTime(dateStr) {
     const diffMs = now - date;
     const diffMin = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
-
     if (diffMin < 1) return 'Adesso';
     if (diffMin < 60) return `${diffMin} min fa`;
     if (diffHours < 24) return `${diffHours}h fa`;
-
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     return `${day}/${month}`;
@@ -435,18 +283,15 @@ function escapeHTML(str) {
 }
 
 // ============================
-// TABS LOGIC
+// TABS
 // ============================
 
 tabsBar.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (!btn) return;
-
     const category = btn.dataset.category;
-
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-
     currentCategory = category;
     currentSearchQuery = '';
     allFetchedItems = [];
@@ -456,7 +301,7 @@ tabsBar.addEventListener('click', (e) => {
 });
 
 // ============================
-// SEARCH MODAL LOGIC
+// SEARCH MODAL
 // ============================
 
 function openSearchModal() {
@@ -473,24 +318,14 @@ function closeSearchModal() {
 searchIcon.addEventListener('click', openSearchModal);
 overlay.addEventListener('click', closeSearchModal);
 cancelSearch.addEventListener('click', closeSearchModal);
-
-searchGoBtn.addEventListener('click', () => {
-    performSearch();
-});
-
-searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        performSearch();
-    }
-});
+searchGoBtn.addEventListener('click', performSearch);
+searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
 
 function performSearch() {
     const query = searchInput.value.trim();
     if (!query) return;
-
     currentSearchQuery = query;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-
     closeSearchModal();
     currentCategory = 'search';
     allFetchedItems = [];
@@ -500,37 +335,19 @@ function performSearch() {
 }
 
 // ============================
-// LIVE BADGE — INSTANT REFRESH
+// LIVE BADGE / LOAD MORE / BACK
 // ============================
 
-liveBadge.addEventListener('click', () => {
-    loadFeed(currentCategory, true);
-});
+liveBadge.addEventListener('click', () => loadFeed(currentCategory, true));
+loadMoreBtn.addEventListener('click', loadMore);
+backIcon.addEventListener('click', () => { window.location.href = 'http://hub4d.lollo.dpdns.org'; });
 
 // ============================
-// LOAD MORE BUTTON
-// ============================
-
-loadMoreBtn.addEventListener('click', () => {
-    loadMore();
-});
-
-// ============================
-// BACK BUTTON
-// ============================
-
-backIcon.addEventListener('click', () => {
-    window.location.href = 'http://hub4d.lollo.dpdns.org';
-});
-
-// ============================
-// AUTO REFRESH
+// AUTO REFRESH (10 min)
 // ============================
 
 function startInterval() {
-    refreshInterval = setInterval(() => {
-        loadFeed(currentCategory, true);
-    }, 600000);
+    refreshInterval = setInterval(() => loadFeed(currentCategory, true), 600000);
 }
 
 function resetInterval() {
@@ -542,9 +359,8 @@ function resetInterval() {
 // INIT
 // ============================
 
+init();
 function init() {
     loadFeed('top');
     startInterval();
 }
-
-init();
