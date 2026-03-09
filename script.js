@@ -16,14 +16,19 @@ const FEEDS = {
 
 const INITIAL_LOAD = 15;
 const LOAD_MORE_COUNT = 10;
+const FETCH_TIMEOUT_MS = 8000;
+
+// rss2json API key is optional for low volume, leave empty or add your own
+const RSS2JSON_KEY = '';
 
 // State
 let currentCategory = 'top';
-let currentSearchQuery = ''; // Saved search query
+let currentSearchQuery = '';
 let allFetchedItems = [];
 let displayedCount = 0;
 let refreshInterval = null;
-let lastSuccessTime = null; // Last successful update time
+let lastSuccessTime = null;
+let currentAbortController = null; // Track ongoing requests
 
 // DOM
 const newsContainer = document.getElementById('newsContainer');
@@ -44,22 +49,96 @@ const cancelSearch = document.getElementById('cancelSearch');
 // RSS FETCHING & PARSING
 // ============================
 
-async function fetchRSS(url) {
-    // Usiamo allOrigins come proxy CORS gratuito
-    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+/**
+ * Fetch with a timeout — aborts if it takes longer than FETCH_TIMEOUT_MS
+ */
+async function fetchWithTimeout(url, signal) {
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
 
-    const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error('HTTP error ' + response.status);
+    // Combine external signal (category change) with timeout signal
+    const combinedSignal = signal
+        ? anySignal([signal, timeoutController.signal])
+        : timeoutController.signal;
+
+    try {
+        const response = await fetch(url, { signal: combinedSignal });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+    }
+}
+
+/**
+ * Combines multiple AbortSignals — aborts as soon as any one fires
+ */
+function anySignal(signals) {
+    const controller = new AbortController();
+    for (const signal of signals) {
+        if (signal.aborted) { controller.abort(); break; }
+        signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+    return controller.signal;
+}
+
+/**
+ * Strategy 1: rss2json.com — fast, designed for RSS, returns JSON directly
+ */
+async function fetchViaRss2Json(rssUrl, signal) {
+    let apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=50`;
+    if (RSS2JSON_KEY) apiUrl += `&api_key=${RSS2JSON_KEY}`;
+
+    const response = await fetchWithTimeout(apiUrl, signal);
+    if (!response.ok) throw new Error('rss2json HTTP error ' + response.status);
+
+    const data = await response.json();
+    if (data.status !== 'ok') throw new Error('rss2json error: ' + (data.message || 'unknown'));
+
+    return (data.items || []).map(item => ({
+        id: item.link || item.guid,
+        title: cleanTitle(item.title || ''),
+        link: item.link || '#',
+        source: data.feed?.title || extractSourceFromTitle(item.title || ''),
+        pubDate: item.pubDate || ''
+    }));
+}
+
+/**
+ * Strategy 2: allorigins.win — fallback, parses raw XML
+ */
+async function fetchViaAllOrigins(rssUrl, signal) {
+    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(rssUrl);
+    const response = await fetchWithTimeout(proxyUrl, signal);
+    if (!response.ok) throw new Error('allorigins HTTP error ' + response.status);
 
     const data = await response.json();
     const xmlText = data.contents;
-
     if (!xmlText) throw new Error('Nessun contenuto restituito dal proxy');
 
+    return parseXML(xmlText);
+}
+
+/**
+ * Strategy 3: corsproxy.io — second fallback
+ */
+async function fetchViaCorsProxy(rssUrl, signal) {
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(rssUrl);
+    const response = await fetchWithTimeout(proxyUrl, signal);
+    if (!response.ok) throw new Error('corsproxy HTTP error ' + response.status);
+
+    const xmlText = await response.text();
+    return parseXML(xmlText);
+}
+
+/**
+ * Parse raw RSS XML into item objects
+ */
+function parseXML(xmlText) {
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlText, 'text/xml');
 
-    // Controllo errori di parsing
     const parseError = xml.querySelector('parsererror');
     if (parseError) throw new Error('Impossibile fare il parse del file XML');
 
@@ -69,7 +148,7 @@ async function fetchRSS(url) {
         const title = item.querySelector('title')?.textContent || '';
         const link = item.querySelector('link')?.textContent || '#';
         const pubDate = item.querySelector('pubDate')?.textContent || '';
-        const source = item.querySelector('source')?.textContent || extractSource(title);
+        const source = item.querySelector('source')?.textContent || extractSourceFromTitle(title);
 
         return {
             id: link,
@@ -81,6 +160,34 @@ async function fetchRSS(url) {
     });
 }
 
+/**
+ * Fetch a single RSS feed, trying proxies in order until one works
+ */
+async function fetchRSS(rssUrl, signal) {
+    const strategies = [
+        () => fetchViaRss2Json(rssUrl, signal),
+        () => fetchViaAllOrigins(rssUrl, signal),
+        () => fetchViaCorsProxy(rssUrl, signal),
+    ];
+
+    let lastError;
+    for (const strategy of strategies) {
+        // Don't try next strategy if request was intentionally aborted
+        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+
+        try {
+            const items = await strategy();
+            return items;
+        } catch (err) {
+            if (err.name === 'AbortError') throw err; // Propagate cancellation immediately
+            console.warn('Strategy failed, trying next:', err.message);
+            lastError = err;
+        }
+    }
+
+    throw lastError || new Error('All fetch strategies failed');
+}
+
 function cleanTitle(title) {
     const dashIndex = title.lastIndexOf(' - ');
     if (dashIndex > 0 && dashIndex > title.length * 0.4) {
@@ -89,7 +196,7 @@ function cleanTitle(title) {
     return title;
 }
 
-function extractSource(title) {
+function extractSourceFromTitle(title) {
     const dashIndex = title.lastIndexOf(' - ');
     if (dashIndex > 0) {
         return title.substring(dashIndex + 3).trim();
@@ -102,13 +209,17 @@ function extractSource(title) {
 // ============================
 
 async function loadFeed(category, isRefresh = false) {
+    // Cancel any in-flight request from a previous category/search
+    if (currentAbortController) {
+        currentAbortController.abort();
+    }
+    currentAbortController = new AbortController();
+    const signal = currentAbortController.signal;
+
     if (!isRefresh) {
         showLoading();
         loadMoreBtn.style.display = 'none';
-    }
-
-    // Show syncing state
-    if (isRefresh) {
+    } else {
         showSyncing();
     }
 
@@ -126,8 +237,11 @@ async function loadFeed(category, isRefresh = false) {
             urls = FEEDS[category];
         }
 
-        const allPromises = urls.map(url => fetchRSS(url));
+        const allPromises = urls.map(url => fetchRSS(url, signal));
         const allResults = await Promise.all(allPromises);
+
+        // If category changed while fetching, bail out silently
+        if (signal.aborted) return;
 
         let newItems = allResults.flat();
         const seen = new Set();
@@ -159,6 +273,8 @@ async function loadFeed(category, isRefresh = false) {
         updateTimestamp();
         hideLoading();
     } catch (error) {
+        if (error.name === 'AbortError') return; // Silently ignore cancelled requests
+
         console.error('Error loading feed:', error);
         revertTimestamp();
         hideLoading();
@@ -251,11 +367,11 @@ function hideLoading() {
     loadingSpinner.classList.add('hidden');
 }
 
-function showError() {
+function showError(message) {
     newsContainer.innerHTML = `
         <div class="error-state">
             <i class="fas fa-exclamation-triangle"></i>
-            <p>Impossibile caricare le notizie. Riprova più tardi.</p>
+            <p>${message || 'Impossibile caricare le notizie. Riprova più tardi.'}</p>
         </div>
     `;
 }
@@ -297,6 +413,7 @@ function revertTimestamp() {
 function formatTime(dateStr) {
     if (!dateStr) return '';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
     const now = new Date();
     const diffMs = now - date;
     const diffMin = Math.floor(diffMs / 60000);
@@ -304,7 +421,7 @@ function formatTime(dateStr) {
 
     if (diffMin < 1) return 'Adesso';
     if (diffMin < 60) return `${diffMin} min fa`;
-    if (diffHours < 24) return `${diffHours} ore fa`;
+    if (diffHours < 24) return `${diffHours}h fa`;
 
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -371,10 +488,7 @@ function performSearch() {
     const query = searchInput.value.trim();
     if (!query) return;
 
-    // Save the query BEFORE closing modal
     currentSearchQuery = query;
-
-    // Deactivate all category tabs
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 
     closeSearchModal();
